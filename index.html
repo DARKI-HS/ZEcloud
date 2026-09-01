@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#000000">
+<title>Zeiterfassung</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif}
+body{min-height:100vh;padding:calc(env(safe-area-inset-top) + 18px) 16px calc(env(safe-area-inset-bottom) + 24px)}
+main{width:100%;max-width:430px;margin:auto}
+h1{text-align:center;font-size:30px;margin:6px 0 16px}
+.card{background:#1c1c1e;border-radius:20px}
+.login{padding:18px;margin-bottom:14px}
+.login h2{margin:0 0 12px;font-size:19px}
+input{width:100%;height:46px;border:0;border-radius:12px;background:#2c2c2e;color:#fff;font-size:16px;padding:0 12px;margin-bottom:9px}
+.action{background:#0a84ff;height:50px;font-size:17px}
+.secondary{background:#2c2c2e;height:44px;font-size:14px;margin-top:8px}
+.userline{text-align:center;color:#aaa;font-size:13px;margin-top:8px}
+.last{text-align:center;padding:17px;margin-bottom:14px}
+.label{color:#aaa;font-size:14px;margin-bottom:6px}
+#lastTime{font-size:25px;font-weight:700}
+#lastDate{color:#aaa;font-size:14px;margin-top:4px}
+.buttons{display:flex;flex-direction:column;gap:11px}
+button{display:block;width:100%;height:72px;border:0;border-radius:19px;color:#fff;font-size:20px;font-weight:700;-webkit-appearance:none;appearance:none;touch-action:manipulation}
+button:active{opacity:.72;transform:scale(.985)}
+.green{background:#30d158}.blue{background:#0a84ff}.orange{background:#ff9f0a}.red{background:#ff453a}
+.status{text-align:center;color:#aaa;font-size:13px;min-height:20px;margin:10px 0}
+.month{padding:14px 16px;margin-top:4px}
+label{display:block;color:#aaa;font-size:13px;margin-bottom:7px}
+select{width:100%;height:46px;border:0;border-radius:12px;background:#2c2c2e;color:#fff;font-size:17px;padding:0 10px}
+.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.sum{border-radius:16px;padding:12px;text-align:center;font-weight:700}
+.sum b{display:block;font-size:28px}.greenbox{background:#163d22;color:#30d158}.bluebox{background:#132e4a;color:#0a84ff}
+.print{margin-top:12px;background:#2c2c2e;height:50px;font-size:17px}
+.history{margin-top:12px;overflow:hidden}.history h2{font-size:17px;padding:15px 16px 10px;margin:0}
+.entry{display:flex;justify-content:space-between;padding:10px 16px;border-top:1px solid #38383a}.entry small{color:#aaa;text-align:right}
+.empty{padding:0 16px 15px;color:#aaa}.clear{height:45px;background:none;color:#ff453a;font-size:14px;font-weight:500}
+.note{text-align:center;color:#777;font-size:11px;margin-top:10px;line-height:1.4}
+.sync{text-align:center;font-size:12px;color:#30d158;margin:7px 0}.pending{color:#ff9f0a}
+@media print{@page{size:A4 portrait;margin:12mm}body{background:#fff;color:#000;padding:0}main{display:none}#printArea{display:block!important}}
+#printArea{display:none}.ptitle{font-size:22px;font-weight:700;margin-bottom:4px}.psub{font-size:13px;margin-bottom:12px}
+.ptable{width:100%;border-collapse:collapse;font-size:9px}.ptable th,.ptable td{border:1px solid #999;padding:5px;text-align:center}.pg{color:#168a35;font-weight:700}.pb{color:#0666c5;font-weight:700}
+
+.buttons button:disabled{
+  background:#5f6368!important;
+  color:#d7d7d7!important;
+  opacity:.58;
+  cursor:not-allowed;
+  box-shadow:none!important;
+  filter:none!important;
+  transform:none!important;
+}
+.buttons button:disabled:active{transform:none!important}
+
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Zeiterfassung</h1>
+
+<section id="loginCard" class="card login">
+  <h2>Cloud-Sicherung</h2>
+  <input id="email" type="email" autocomplete="email" placeholder="E-Mail">
+  <input id="password" type="password" autocomplete="current-password" placeholder="Passwort">
+  <button class="action" onclick="login()">Anmelden</button>
+  <button class="secondary" onclick="register()">Neues Konto erstellen</button>
+  <div id="loginStatus" class="userline"></div>
+</section>
+
+<section id="app" class="hidden">
+<section class="card last"><div class="label">Letzter Gehen-Zeitpunkt</div><div id="lastTime">Noch nicht erfasst</div><div id="lastDate"></div></section>
+
+<section class="buttons">
+<button id="btnKommen" class="green" onclick="save('Kommen')">Kommen</button>
+<button id="btnBeginn" class="blue" onclick="save('Dienstfahrt Beginn')">Dienstfahrt Beginn</button>
+<button id="btnEnde" class="orange" onclick="save('Dienstfahrt Ende')">Dienstfahrt Ende</button>
+<button id="btnGehen" class="red" onclick="save('Gehen')">Gehen</button>
+</section>
+
+<div id="status" class="status"></div>
+<div id="sync" class="sync"></div>
+
+<section class="card month">
+<label for="month">Monat</label>
+<select id="month" onchange="render()"></select>
+<div class="summary"><div class="sum greenbox"><b id="over">0</b>&gt; 8 h</div><div class="sum bluebox"><b id="under">0</b>&lt; 8 h</div></div>
+<button class="print" onclick="printMonth()">🖨 Monat drucken</button>
+</section>
+
+<section class="card history">
+<h2>Einträge im ausgewählten Monat</h2>
+<div id="history"></div>
+<button class="clear" onclick="clearAll()">Alle Daten löschen<br><small>Letzter Gehen-Zeitpunkt bleibt erhalten</small></button>
+</section>
+
+<div class="userline"><span id="userEmail"></span> · <button class="secondary" style="width:auto;padding:0 14px" onclick="logout()">Abmelden</button></div>
+<div class="note">Die Zeitdaten werden zuerst lokal gespeichert. Ohne Internet bleiben neue Einträge auf dem Gerät vorgemerkt und werden bei wieder vorhandener Verbindung automatisch mit der Cloud synchronisiert.</div>
+</section>
+</main>
+
+<section id="printArea">
+<div class="ptitle">Zeiterfassung</div><div id="printMonth" class="psub"></div>
+<table class="ptable"><thead><tr><th>Datum</th><th>Kommen</th><th>Dienstfahrt Beginn</th><th>Dienstfahrt Ende</th><th>Gehen</th><th>Dauer</th><th>Bewertung</th></tr></thead>
+<tbody id="printRows"></tbody></table><div id="printSum" class="psub"></div>
+</section>
+
+<script>
+/*
+  EINMALIG EINTRAGEN:
+  1. supabaseUrl = URL deines Supabase-Projekts
+  2. supabaseKey = PUBLISHABLE KEY deines Supabase-Projekts
+  Niemals einen service_role/secret key hier eintragen.
+*/
+const supabaseUrl="https://vxjltwedrrdqwgmtyrqj.supabase.co";
+const supabaseKey="sb_publishable_lYechPn7kNd0WqqR_jRKew_Ippnb4kJ";
+const sb=window.supabase.createClient(supabaseUrl,supabaseKey,{auth:{persistSession:true,autoRefreshToken:true}});
+
+const LOCAL_KEY="zeiterfassung_cloud_cache_v2";
+const LAST_GO_KEY="zeiterfassung_last_go_v1";
+let entries=[];
+let syncing=false;
+
+function isConfigured(){return !supabaseUrl.startsWith("DEINE_")&&!supabaseKey.startsWith("DEIN_")}
+function setStatus(t){document.getElementById("status").textContent=t}
+function setLoginStatus(t){document.getElementById("loginStatus").textContent=t}
+function uid(){return (crypto&&crypto.randomUUID)?crypto.randomUUID():Date.now()+"-"+Math.random().toString(16).slice(2)}
+function localSave(){localStorage.setItem(LOCAL_KEY,JSON.stringify(entries))}
+function localLoad(){
+  try{
+    entries=JSON.parse(localStorage.getItem(LOCAL_KEY)||"[]");
+    if(!Array.isArray(entries))entries=[];
+    entries=entries.map(x=>({
+      id:x.id??null,
+      local_id:x.local_id||uid(),
+      type:x.type,
+      stamp:x.stamp,
+      pending:x.pending===true || !x.id
+    }));
+  }catch(e){entries=[]}
+}
+function saveLastGo(stamp){localStorage.setItem(LAST_GO_KEY,stamp)}
+function loadLastGo(){return localStorage.getItem(LAST_GO_KEY)||""}
+function tm(x){return new Date(x).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})}
+function dt(x){return new Date(x).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"})}
+function mk(x){let d=new Date(x);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")}
+function ml(k){let a=k.split("-");return new Date(+a[0],+a[1]-1,1).toLocaleDateString("de-DE",{month:"long",year:"numeric"})}
+function dur(m){return m==null?"—":Math.floor(m/60)+" h "+String(m%60).padStart(2,"0")+" min"}
+
+async function login(){
+  if(!isConfigured()){setLoginStatus("Supabase ist noch nicht eingerichtet.");return}
+  const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  if(error){setLoginStatus(error.message);return}
+  setLoginStatus("");await startApp();
+}
+async function register(){
+  if(!isConfigured()){setLoginStatus("Supabase ist noch nicht eingerichtet.");return}
+  const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;
+  const {error}=await sb.auth.signUp({email,password});
+  if(error){setLoginStatus(error.message);return}
+  setLoginStatus("Konto erstellt. Falls E-Mail-Bestätigung aktiviert ist, bitte E-Mail bestätigen.");
+}
+async function logout(){await sb.auth.signOut();location.reload()}
+
+function updateSyncLabel(){
+  const n=entries.filter(x=>x.pending).length;
+  const el=document.getElementById("sync");
+  if(n){
+    el.textContent="⏳ "+n+" Eintrag"+(n===1?"":"e")+" wartet"+(n===1?"":"en")+" auf Cloud-Synchronisierung";
+    el.classList.add("pending");
+  }else{
+    el.textContent="☁ Synchronisiert";
+    el.classList.remove("pending");
+  }
+}
+
+async function startApp(){
+  document.getElementById("loginCard").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  const {data:{user}}=await sb.auth.getUser();
+  document.getElementById("userEmail").textContent=user?.email||"";
+  localLoad();
+  render();
+  await syncPending();
+  await cloudLoad();
+  render();
+}
+
+async function syncPending(){
+  if(syncing || !navigator.onLine)return;
+  const pending=entries.filter(x=>x.pending);
+  if(!pending.length){updateSyncLabel();return}
+
+  const {data:{user},error:userError}=await sb.auth.getUser();
+  if(userError||!user)return;
+
+  syncing=true;
+  updateSyncLabel();
+
+  try{
+    for(const item of entries.filter(x=>x.pending)){
+      // Zuerst prüfen, ob genau dieser Zeitstempel bereits in der Cloud liegt.
+      // Das verhindert Dubletten, falls ein früherer Upload zwar ankam,
+      // die Antwort aber wegen eines Verbindungsabbruchs verloren ging.
+      const {data:existing,error:findError}=await sb.from("time_entries")
+        .select("id,event_type,occurred_at")
+        .eq("event_type",item.type)
+        .eq("occurred_at",item.stamp)
+        .limit(1);
+
+      if(!findError && existing && existing.length){
+        item.id=existing[0].id;
+        item.pending=false;
+        localSave();
+        continue;
+      }
+
+      const {data,error}=await sb.from("time_entries")
+        .insert({
+          user_id:user.id,
+          event_type:item.type,
+          occurred_at:item.stamp
+        })
+        .select("id,event_type,occurred_at")
+        .single();
+
+      if(error){
+        console.error("Supabase sync error:",error);
+        break;
+      }
+
+      item.id=data.id;
+      item.pending=false;
+      localSave();
+    }
+  }finally{
+    syncing=false;
+    localSave();
+    updateSyncLabel();
+  }
+}
+
+async function cloudLoad(){
+  if(!navigator.onLine){updateSyncLabel();return}
+  const {data,error}=await sb.from("time_entries")
+    .select("id,event_type,occurred_at")
+    .order("occurred_at",{ascending:true});
+
+  if(error){
+    document.getElementById("sync").textContent="⚠ Cloud-Laden fehlgeschlagen – lokale Daten werden angezeigt.";
+    return;
+  }
+
+  // Nicht synchronisierte lokale Einträge dürfen beim Cloud-Laden nicht verloren gehen.
+  const pending=entries.filter(x=>x.pending);
+  const cloud=data.map(x=>({
+    id:x.id,
+    local_id:"cloud-"+x.id,
+    type:x.event_type,
+    stamp:x.occurred_at,
+    pending:false
+  }));
+
+  const seen=new Set(cloud.map(x=>x.id));
+  entries=[...cloud,...pending.filter(x=>!x.id||!seen.has(x.id))]
+    .sort((a,b)=>new Date(a.stamp)-new Date(b.stamp));
+
+  localSave();
+  updateSyncLabel();
+}
+
+async function save(type){
+  const now=new Date().toISOString();
+  const local={
+    id:null,
+    local_id:uid(),
+    type,
+    stamp:now,
+    pending:true
+  };
+
+  entries.push(local);
+  if(type==="Gehen")saveLastGo(now);
+  localSave();
+  render();
+  setStatus(type+" gespeichert: "+dt(now)+" "+tm(now));
+
+  if(!navigator.onLine){
+    updateSyncLabel();
+    setStatus("Lokal gespeichert – wird automatisch synchronisiert, sobald Internet verfügbar ist.");
+    return;
+  }
+
+  await syncPending();
+
+  if(local.pending){
+    setStatus("Lokal gespeichert – Cloud momentan nicht erreichbar. Automatische Synchronisierung bleibt vorgemerkt.");
+  }else{
+    setStatus(type+" gespeichert und mit der Cloud synchronisiert.");
+    setTimeout(()=>setStatus(""),3000);
+  }
+  render();
+}
+
+function months(){
+  let s=document.getElementById("month"),old=s.value,set=new Set([mk(Date.now())]);
+  entries.forEach(x=>set.add(mk(x.stamp)));
+  let keys=[...set].sort().reverse();
+  s.innerHTML=keys.map(k=>'<option value="'+k+'">'+ml(k)+"</option>").join("");
+  if(keys.includes(old))s.value=old;
+}
+function pairs(k){
+  let a=entries.filter(x=>mk(x.stamp)===k).sort((a,b)=>new Date(a.stamp)-new Date(b.stamp)),open=[],out=[];
+  a.forEach(x=>{
+    if(x.type==="Dienstfahrt Beginn")open.push(x);
+    else if(x.type==="Dienstfahrt Ende"){
+      let b=open.pop();
+      if(b){
+        let bd=new Date(b.stamp),ed=new Date(x.stamp);
+        let m=(ed.getHours()*60+ed.getMinutes())-(bd.getHours()*60+bd.getMinutes());
+        if(m<0)m+=1440;
+        out.push({b:bd,e:ed,m});
+      }else out.push({b:null,e:new Date(x.stamp),m:null});
+    }
+  });
+  open.forEach(x=>out.push({b:new Date(x.stamp),e:null,m:null}));
+  return out.sort((a,b)=>(a.b||a.e)-(b.b||b.e));
+}
+
+function updateActionButtons(){
+  const sequence=[
+    {type:"Kommen",id:"btnKommen"},
+    {type:"Dienstfahrt Beginn",id:"btnBeginn"},
+    {type:"Dienstfahrt Ende",id:"btnEnde"},
+    {type:"Gehen",id:"btnGehen"}
+  ];
+
+  // Der zuletzt erfasste Eintrag bestimmt eindeutig den nächsten erlaubten Schritt.
+  // Lokale, noch nicht synchronisierte Einträge zählen ebenfalls, damit die
+  // Reihenfolge auch offline sofort korrekt weitergeführt wird.
+  const valid=entries
+    .filter(x=>sequence.some(s=>s.type===x.type))
+    .sort((a,b)=>new Date(a.stamp)-new Date(b.stamp));
+
+  let nextType="Kommen";
+  if(valid.length){
+    const lastType=valid[valid.length-1].type;
+    const pos=sequence.findIndex(s=>s.type===lastType);
+    nextType=sequence[(pos+1)%sequence.length].type;
+  }
+
+  sequence.forEach(s=>{
+    const btn=document.getElementById(s.id);
+    if(!btn)return;
+    const active=s.type===nextType;
+    btn.disabled=!active;
+    btn.setAttribute("aria-disabled",active?"false":"true");
+    btn.title=active?"Jetzt verfügbar":"Erst nach „"+sequence[(sequence.findIndex(x=>x.type===s.type)-1+sequence.length)%sequence.length].type+"“ verfügbar";
+  });
+}
+
+function render(){
+  updateActionButtons();
+  months();
+  let k=document.getElementById("month").value;
+
+  let last=[...entries].reverse().find(x=>x.type==="Gehen");
+  const preserved=loadLastGo();
+  if(!last && preserved)last={stamp:preserved};
+  document.getElementById("lastTime").textContent=last?tm(last.stamp):"Noch nicht erfasst";
+  document.getElementById("lastDate").textContent=last?dt(last.stamp):"";
+
+  let p=pairs(k);
+  document.getElementById("over").textContent=p.filter(x=>x.m>480).length;
+  document.getElementById("under").textContent=p.filter(x=>x.m<480).length;
+
+  let a=entries.filter(x=>mk(x.stamp)===k).sort((a,b)=>new Date(b.stamp)-new Date(a.stamp));
+  document.getElementById("history").innerHTML=a.length?a.slice(0,50).map(x=>
+    '<div class="entry"><strong>'+x.type+(x.pending?' ⏳':'')+'</strong><small>'+dt(x.stamp)+'<br>'+tm(x.stamp)+'</small></div>'
+  ).join(""):'<div class="empty">Keine Einträge in diesem Monat.</div>';
+  updateSyncLabel();
+}
+
+async function clearAll(){
+  if(!confirm("Alle Zeit-Einträge wirklich löschen? Der letzte Gehen-Zeitpunkt bleibt in der Anzeige erhalten."))return;
+
+  const last=[...entries].reverse().find(x=>x.type==="Gehen");
+  if(last)saveLastGo(last.stamp);
+
+  if(navigator.onLine){
+    const {error}=await sb.from("time_entries").delete().not("id","is",null);
+    if(error){
+      setStatus("Löschen in der Cloud fehlgeschlagen. Es wurde nichts lokal gelöscht.");
+      return;
+    }
+  }else{
+    setStatus("Zum vollständigen Löschen ist eine Internetverbindung erforderlich.");
+    return;
+  }
+
+  entries=[];
+  localSave();
+  render();
+  setStatus("Alle Zeit-Einträge gelöscht. Letzter Gehen-Zeitpunkt bleibt erhalten.");
+}
+
+function printMonth(){
+  let k=document.getElementById("month").value, a=entries.filter(x=>mk(x.stamp)===k).sort((a,b)=>new Date(a.stamp)-new Date(b.stamp)),days={};
+  a.forEach(x=>{let d=new Date(x.stamp),key=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");if(!days[key])days[key]={date:d,kommen:null,beginn:null,ende:null,gehen:null};if(x.type==="Kommen"&&!days[key].kommen)days[key].kommen=d;if(x.type==="Dienstfahrt Beginn"&&!days[key].beginn)days[key].beginn=d;if(x.type==="Dienstfahrt Ende"&&!days[key].ende)days[key].ende=d;if(x.type==="Gehen")days[key].gehen=d});
+  let o=0,u=0,e=0,rows=Object.keys(days).sort().map(key=>{let x=days[key],m=null;if(x.beginn&&x.ende){m=(x.ende.getHours()*60+x.ende.getMinutes())-(x.beginn.getHours()*60+x.beginn.getMinutes());if(m<0)m+=1440;if(m>480)o++;else if(m<480)u++;else e++}let r=m==null?"—":m>480?"> 8 h":m<480?"< 8 h":"= 8 h",c=m>480?"pg":m<480?"pb":"";return "<tr><td>"+dt(x.date)+"</td><td>"+(x.kommen?tm(x.kommen):"—")+"</td><td>"+(x.beginn?tm(x.beginn):"—")+"</td><td>"+(x.ende?tm(x.ende):"—")+"</td><td>"+(x.gehen?tm(x.gehen):"—")+"</td><td>"+dur(m)+"</td><td class='"+c+"'>"+r+"</td></tr>"});
+  document.getElementById("printMonth").textContent=ml(k);document.getElementById("printRows").innerHTML=rows.join("");document.getElementById("printSum").textContent="Tage > 8 h: "+o+" | Tage < 8 h: "+u+" | Tage = 8 h: "+e;window.print();
+}
+
+window.addEventListener("online",async ()=>{
+  setStatus("Internet wieder verfügbar – synchronisiere …");
+  await syncPending();
+  await cloudLoad();
+  render();
+  if(entries.some(x=>x.pending)){
+    setStatus("Einige Einträge warten weiterhin auf die Cloud.");
+  }else{
+    setStatus("Cloud-Synchronisierung abgeschlossen.");
+    setTimeout(()=>setStatus(""),3000);
+  }
+});
+
+window.addEventListener("offline",()=>{
+  setStatus("Offline – neue Einträge werden lokal gespeichert.");
+  updateSyncLabel();
+});
+
+localLoad();
+sb.auth.getSession().then(async ({data:{session}})=>{if(session)await startApp()});
+</script>
+</body>
+</html>
